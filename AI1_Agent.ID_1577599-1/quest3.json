@@ -1,0 +1,293 @@
+{
+  "name": "My workflow quest3",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 22
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -192,
+        0
+      ],
+      "id": "2899e75a-f961-45c4-bd09-896ebeb25abf",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://fetchrss.com/feed/1vofaVDL2Chu1vovelAQLG0I.rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        0
+      ],
+      "id": "3a7fe0fa-96d4-4240-a643-fe44c92a18ff",
+      "name": "RSS Read"
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        -16
+      ],
+      "id": "2c9386c7-9663-4d62-a890-bae9a76ebdef",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "url": "https://fetchrss.com/feed/1vofaVDL2Chu1vovg45VpEpG.rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        160
+      ],
+      "id": "4be03f62-29fe-4c65-9877-a6cfc40199e9",
+      "name": "RSS Read1"
+    },
+    {
+      "parameters": {
+        "url": "https://fetchrss.com/feed/1vofaVDL2Chu1vofVrDR76GD.rss",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        48,
+        -144
+      ],
+      "id": "cd6c47da-17f0-410f-9756-00392100449a",
+      "name": "RSS Read2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Код для подготовки данных после Merge\nconst allItems = $input.all();\n\nconsole.log('=== ДЕБАГ: Начало обработки ===');\nconsole.log('Получено элементов:', allItems.length);\n\n// Логируем структуру первого элемента\nif (allItems.length > 0) {\n  console.log('Структура первого элемента:', JSON.stringify(allItems[0], null, 2));\n}\n\n// Если нет данных\nif (!allItems || allItems.length === 0) {\n  console.log('Нет входных данных!');\n  return [{\n    json: {\n      error: \"Нет данных для обработки\",\n      status: \"empty\",\n      timestamp: new Date().toISOString()\n    }\n  }];\n}\n\n// Обрабатываем только валидные элементы\nconst validItems = allItems.filter(item => {\n  const json = item.json;\n  return json && json.title && json.link;\n});\n\nconsole.log('Валидных элементов:', validItems.length);\n\nif (validItems.length === 0) {\n  return [{\n    json: {\n      error: \"Нет валидных постов (отсутствуют title или link)\",\n      status: \"invalid\",\n      raw_data: allItems.map(item => item.json)\n    }\n  }];\n}\n\n// Группируем по каналам\nconst groupedByChannel = {};\n\nvalidItems.forEach(item => {\n  const json = item.json;\n  const channel = json.channel || 'Без категории';\n  \n  if (!groupedByChannel[channel]) {\n    groupedByChannel[channel] = [];\n  }\n  \n  groupedByChannel[channel].push({\n    title: json.title,\n    content: json.content || json.description || '',\n    link: json.link,\n    date: json.pubDate || json.isoDate\n  });\n});\n\n// Формируем данные для AI\nconst channels = Object.keys(groupedByChannel).map(channel => ({\n  channel_name: channel,\n  posts: groupedByChannel[channel],\n  post_count: groupedByChannel[channel].length\n}));\n\n// Создаем текстовое представление для промта\nlet aiPromptText = \"СОЗДАЙ ДАЙДЖЕСТ НОВОСТЕЙ:\\n\\n\";\nchannels.forEach(channel => {\n  aiPromptText += `--- КАНАЛ: ${channel.channel_name} (${channel.post_count} постов) ---\\n`;\n  channel.posts.forEach((post, index) => {\n    aiPromptText += `ПОСТ ${index + 1}:\\n`;\n    aiPromptText += `Заголовок: ${post.title}\\n`;\n    aiPromptText += `Содержание: ${post.content.substring(0, 300)}${post.content.length > 300 ? '...' : ''}\\n`;\n    aiPromptText += `Ссылка: ${post.link}\\n\\n`;\n  });\n});\n\nconsole.log('Сформирован AI промт, длина:', aiPromptText.length);\n\nreturn [{\n  json: {\n    channels: channels,\n    ai_prompt: aiPromptText,\n    total_posts: validItems.length,\n    total_channels: channels.length,\n    status: \"ready_for_ai\"\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "321157f4-f1f7-4a99-aa50-449d411416c3",
+      "name": "Code in JavaScript",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// Просто передаем данные в AI Agent\nconst input = $input.first();\n\nconsole.log('Данные для AI Agent:', input?.json?.status);\n\n// Проверяем, есть ли данные для обработки\nif (!input || input.json.status === \"empty\" || input.json.status === \"invalid\") {\n  // Если нет данных, отправляем сообщение в Telegram\n  return [{\n    json: {\n      telegram_message: \"📭 Сегодня нет новых постов для дайджеста.\",\n      skip_ai: true\n    }\n  }];\n}\n\n// Если данные есть, передаем их в AI\nreturn $input.all();"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        816,
+        0
+      ],
+      "id": "51a49842-8a07-450e-938f-ea16acc3ca22",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=ПРОЧИТАЙ ЭТИ ДАННЫХ И СОЗДАЙ ДАЙДЖЕСТ:\n\n{{ $json.ai_prompt }}\n\nФОРМАТ ВЫВОДА СТРОГО ТАКОЙ:\n\n📰 **НОВОСТНОЙ ДАЙДЖЕСТ** 📰\n\n*Общее саммари:*\n[Здесь 1 абзац с анализом всех постов, выдели главные темы и тренды]\n\n*Детали по каналам:*\n\n[Название канала 1] - [X] постов\n• [Краткое описание поста 1 в 1 предложение], [ссылка]\n• [Краткое описание поста 2], [ссылка]\n\n[Название канала 2] - [Y] постов\n• [Краткое описание поста 1], [ссылка]\n\nВСЕГДА включай ссылки! Отвечай только на русском языке.",
+        "options": {
+          "systemMessage": "Ты — ассистент для создания новостных дайджестов. Ты получаешь структурированные данные о постах из Telegram-каналов."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        1088,
+        0
+      ],
+      "id": "30347c4f-8a39-4463-a32f-ae737b9c8b06",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "GigaChat/GigaChat-2-Max",
+          "mode": "list",
+          "cachedResultName": "GigaChat/GigaChat-2-Max"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        1056,
+        224
+      ],
+      "id": "dc36c38b-81db-48a9-a5d9-23f97bee89a0",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "uGQ2k6RIACfApDWK",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "-5097630102",
+        "text": "=={{ $json.output || $json.text || $json.result }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1440,
+        0
+      ],
+      "id": "a9839fd5-ce2b-4634-9c4b-b78f7b24d277",
+      "name": "Send a text message1",
+      "webhookId": "afed8070-311e-4839-ae58-5b9fc0daa919",
+      "credentials": {
+        "telegramApi": {
+          "id": "dzyAsowGyYZnBeXp",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "RSS Read2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "RSS Read1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "RSS Read2": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Send a text message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "0aae6d4f-e39d-4cb5-b2c1-73a7b60a18f0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c2aff4b0d067dd455112043042c8a65e8c8c18e7e5e501456182c7c1282e7494"
+  },
+  "id": "5m1Ie0a4oyoH6RKA",
+  "tags": []
+}

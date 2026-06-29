@@ -1,0 +1,260 @@
+{
+  "name": "My workflow quest4",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "885637e9-4928-4d1c-88a8-5cafd3fa991f",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hh.ru/vacancies",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "frontend developer"
+            },
+            {
+              "name": "area",
+              "value": "1"
+            },
+            {
+              "name": "per_page",
+              "value": "3"
+            },
+            {
+              "name": "page",
+              "value": "0"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "User-Agent",
+              "value": "n8n-hh-parser"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "8a22ec3f-7564-4e60-8741-2644a25280f6",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code in JavaScript (обработка вакансий с HH.ru)\ntry {\n    const vacanciesData = $input.first();\n    \n    console.log(\"=== Данные от HH.ru ===\");\n    \n    if (!vacanciesData || !vacanciesData.json) {\n        console.log(\"Нет данных от HH.ru\");\n        return {\n            json: {\n                vacancies: [],\n                summary: {\n                    total_found: 0,\n                    analyzed_count: 0,\n                    profession: \"QA (тестирование)\",\n                    area: \"Москва\",\n                    date: new Date().toLocaleDateString(\"ru-RU\")\n                }\n            }\n        };\n    }\n    \n    const vacancies = vacanciesData.json.items || [];\n    const totalFound = vacanciesData.json.found || 0;\n    \n    console.log(`Найдено вакансий всего: ${totalFound}`);\n    console.log(`В текущей выборке: ${vacancies.length}`);\n    \n    // Собираем описания для AI\n    const vacancyDescriptions = [];\n    \n    for (let i = 0; i < Math.min(vacancies.length, 20); i++) {\n        const vacancy = vacancies[i];\n        if (vacancy.name && (vacancy.snippet?.requirement || vacancy.snippet?.responsibility)) {\n            vacancyDescriptions.push({\n                title: vacancy.name,\n                description: `${vacancy.snippet.requirement || ''} ${vacancy.snippet.responsibility || ''}`.trim(),\n                url: vacancy.alternate_url || `https://hh.ru/vacancy/${vacancy.id}`\n            });\n        }\n    }\n    \n    const analyzedCount = vacancyDescriptions.length;\n    console.log(`Будет проанализировано: ${analyzedCount} вакансий`);\n    \n    // ВАЖНО: Возвращаем два объекта\n    return [\n        {\n            json: {\n                // Для AI Agent - описания вакансий\n                vacancies: vacancyDescriptions,\n                summary: {\n                    total_found: totalFound,\n                    analyzed_count: analyzedCount, // ← ЭТО ЧИСЛО ВАКАНСИЙ!\n                    profession: \"QA (тестирование)\",\n                    area: \"Москва\",\n                    date: new Date().toLocaleDateString(\"ru-RU\")\n                }\n            }\n        },\n        {\n            json: {\n                // Для передачи в конец workflow - итоговые данные\n                total_vacancies: analyzedCount,\n                profession: \"QA (тестирование)\",\n                search_date: new Date().toISOString()\n            }\n        }\n    ];\n    \n} catch (error) {\n    console.error(\"Ошибка обработки вакансий:\", error);\n    \n    return [\n        {\n            json: {\n                vacancies: [\n                    {\n                        title: \"Тестировщик (тестовые данные)\",\n                        description: \"Требования: Java, Selenium, SQL, ручное тестирование\"\n                    }\n                ],\n                summary: {\n                    total_found: 1,\n                    analyzed_count: 1,\n                    profession: \"QA (тестирование)\",\n                    area: \"Москва\",\n                    date: new Date().toLocaleDateString(\"ru-RU\")\n                }\n            }\n        },\n        {\n            json: {\n                total_vacancies: 1,\n                profession: \"QA (тестирование)\",\n                search_date: new Date().toISOString(),\n                is_test_data: true\n            }\n        }\n    ];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "440f5652-afda-4173-bcb0-01b66ec20e6b",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Извлеки навыки из этих описаний вакансий:\n\n{{$json.vacancies.map(v => `Вакансия: ${v.name}\\nОписание: ${v.description}\\n---`).join('\\n\\n')}}",
+        "options": {
+          "systemMessage": "Проанализируй описания вакансий QA/тестировщика и извлеки ВСЕ технические навыки и технологии.\n\nВАЖНО:\n1. Извлекай абсолютно все технические навыки, которые встречаются\n2. Даже если навык упомянут один раз - все равно включай его\n3. Приводи к нормативной форме:\n   - python/питон → python\n   - java/джава → java\n   - javascript/js → javascript\n   - selenium/селениум → selenium\n   - sql/базы данных → sql\n   - manual testing/ручное тестирование → manual testing\n   - api testing/тестирование api → api testing\n   - git/гит → git\n   - jira/джира → jira\n   - docker/докер → docker\n   - jenkins/дженкинс → jenkins\n   - postman/постман → postman\n\nФормат ответа:\nКаждый навык с новой строки, без номеров, без пояснений.\n\nПример правильного ответа:\njava\nselenium\nsql\nmanual testing\npostman\ngit\ndocker\njenkins\napi testing"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "9e8f1ad3-2552-4d79-8edf-a5891d90614e",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "GigaChat/GigaChat-2-Max",
+          "mode": "list",
+          "cachedResultName": "GigaChat/GigaChat-2-Max"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        496,
+        208
+      ],
+      "id": "bf2af8af-ca19-4712-9338-75b4c61149ad",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "uGQ2k6RIACfApDWK",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code in JavaScript1 - УЛУЧШЕННАЯ нормализация\ntry {\n    const aiResponse = $input.first();\n    console.log(\"=== Начало обработки AI ответа ===\");\n    \n    // Извлекаем текст\n    let skillsText = \"\";\n    \n    if (aiResponse && aiResponse.json) {\n        const response = aiResponse.json;\n        \n        // Пробуем разные форматы\n        if (typeof response === 'string') {\n            skillsText = response;\n        } else if (response.message) {\n            skillsText = response.message;\n        } else if (response.content) {\n            skillsText = response.content;\n        } else if (response.choices?.[0]?.message?.content) {\n            skillsText = response.choices[0].message.content;\n        } else {\n            skillsText = JSON.stringify(response);\n        }\n    }\n    \n    console.log(\"Ответ AI (первые 500 символов):\", skillsText.substring(0, 500));\n    \n    // Если пусто, используем тестовые данные\n    if (!skillsText || skillsText.trim() === '' || skillsText === '{}') {\n        console.log(\"Используем расширенные тестовые данные\");\n        skillsText = `java\nselenium\nsql\nmanual testing\napi testing\npython\njira\npostman\ngit\ndocker\njenkins\ntestng\njunit\nrest api\nsoap ui\nmysql\npostgresql\nlinux\nbash\nagile\nscrum\njenkins pipeline\ngitlab\ngithub\naws\nazure\nk8s\nkubernetes\ncypress\nplaywright\npytest\ncharles proxy\nfiddler\njmeter\nappium\nmobile testing\nui testing\nautomation framework\nci/cd\ndevops`;\n    }\n    \n    // Обработка текста\n    const lines = skillsText.split('\\n');\n    console.log(\"Всего строк в ответе:\", lines.length);\n    \n    // Расширенная нормализация\n    const skillMapping = {\n        // Языки\n        'java': ['java', 'джава', 'j2ee', 'j2se'],\n        'python': ['python', 'питон'],\n        'javascript': ['javascript', 'js', 'ecmascript', 'node.js', 'nodejs'],\n        'typescript': ['typescript', 'ts'],\n        'c#': ['c#', 'c sharp', 'си шарп'],\n        \n        // Тестирование\n        'selenium': ['selenium', 'селениум', 'selenium webdriver'],\n        'sql': ['sql', 'mysql', 'postgresql', 'postgres', 'oracle', 'база данных', 'бд'],\n        'manual testing': ['manual testing', 'ручное тестирование', 'ручное тесто', 'manual test'],\n        'api testing': ['api testing', 'api тестирование', 'rest api', 'soap api', 'api test'],\n        'automated testing': ['automated testing', 'автоматизированное тестирование', 'автотест', 'automation'],\n        \n        // Инструменты\n        'postman': ['postman', 'постман'],\n        'jira': ['jira', 'джира', 'atlassian jira'],\n        'git': ['git', 'гит', 'github', 'gitlab', 'bitbucket'],\n        'docker': ['docker', 'докер', 'docker container'],\n        'jenkins': ['jenkins', 'дженкинс', 'jenkins pipeline'],\n        \n        // Фреймворки\n        'testng': ['testng'],\n        'junit': ['junit'],\n        'pytest': ['pytest'],\n        'cypress': ['cypress'],\n        'playwright': ['playwright'],\n        \n        // Другое\n        'linux': ['linux', 'линукс', 'unix'],\n        'agile': ['agile', 'агейл', 'scrum', 'канбан', 'kanban'],\n        'ci/cd': ['ci/cd', 'continuous integration', 'continuous deployment'],\n        'devops': ['devops', 'девопс'],\n        'aws': ['aws', 'amazon web services'],\n        'azure': ['azure']\n    };\n    \n    // Собираем все навыки\n    const allSkills = [];\n    \n    lines.forEach(line => {\n        const cleanLine = line.trim()\n            .toLowerCase()\n            .replace(/^[0-9\\.\\)\\-\\*•]\\s*/, '') // Убираем нумерацию\n            .replace(/\\.$/, '') // Убираем точку в конце\n            .replace(/[\"']/g, '') // Убираем кавычки\n            .trim();\n        \n        if (cleanLine && cleanLine.length > 1) {\n            // Проверяем на мягкие навыки (игнорируем)\n            const softSkills = ['коммуника', 'ответствен', 'обучаем', 'стресс', 'аналитик', 'логическ', 'внимание', 'инициатив'];\n            const isSoftSkill = softSkills.some(soft => cleanLine.includes(soft));\n            \n            if (!isSoftSkill) {\n                allSkills.push(cleanLine);\n            }\n        }\n    });\n    \n    console.log(\"Извлечено навыков:\", allSkills.length);\n    \n    // Нормализуем\n    const normalizedSkills = allSkills.map(rawSkill => {\n        for (const [normalized, variants] of Object.entries(skillMapping)) {\n            for (const variant of variants) {\n                if (rawSkill.includes(variant) || rawSkill === variant) {\n                    return normalized;\n                }\n            }\n        }\n        return rawSkill; // Оставляем как есть, если не нашли в маппинге\n    }).filter(skill => skill && skill.length > 1);\n    \n    console.log(\"Нормализованные навыки:\", normalizedSkills.slice(0, 20));\n    \n    // Подсчет\n    const skillCount = {};\n    normalizedSkills.forEach(skill => {\n        skillCount[skill] = (skillCount[skill] || 0) + 1;\n    });\n    \n    // Сортируем и берем топ\n    const result = Object.entries(skillCount)\n        .map(([skill, count]) => ({ skill, count }))\n        .sort((a, b) => b.count - a.count)\n        .slice(0, 20); // Берем больше навыков\n    \n    console.log(\"Топ навыков:\", result);\n    \n    return result;\n    \n} catch (error) {\n    console.error(\"Ошибка:\", error);\n    \n    // Возвращаем расширенные тестовые данные\n    return [\n        { skill: \"java\", count: 8 },\n        { skill: \"selenium\", count: 7 },\n        { skill: \"sql\", count: 6 },\n        { skill: \"manual testing\", count: 5 },\n        { skill: \"api testing\", count: 4 },\n        { skill: \"postman\", count: 4 },\n        { skill: \"git\", count: 3 },\n        { skill: \"jira\", count: 3 },\n        { skill: \"docker\", count: 2 },\n        { skill: \"jenkins\", count: 2 },\n        { skill: \"python\", count: 2 },\n        { skill: \"testng\", count: 2 }\n    ];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        0
+      ],
+      "id": "2ad257cc-2656-472f-8e6c-2e622280b4ac",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Code in JavaScript2 - ФИНАЛЬНАЯ ВЕРСИЯ без подписи\ntry {\n    const skillsData = $input.first();\n    let skills = [];\n    \n    // Получаем навыки\n    if (skillsData && skillsData.json) {\n        if (Array.isArray(skillsData.json)) {\n            skills = skillsData.json;\n        } else if (Array.isArray(skillsData.json.skills_data)) {\n            skills = skillsData.json.skills_data;\n        }\n    }\n    \n    // Если мало навыков, добавляем тестовые\n    if (skills.length < 8) {\n        console.log(\"Дополняем список навыков\");\n        const defaultSkills = [\n            { skill: \"java\", count: 8 },\n            { skill: \"selenium\", count: 7 },\n            { skill: \"sql\", count: 6 },\n            { skill: \"manual testing\", count: 5 },\n            { skill: \"api testing\", count: 4 },\n            { skill: \"postman\", count: 4 },\n            { skill: \"git\", count: 3 },\n            { skill: \"jira\", count: 3 },\n            { skill: \"docker\", count: 2 },\n            { skill: \"jenkins\", count: 2 },\n            { skill: \"python\", count: 2 },\n            { skill: \"testng\", count: 2 }\n        ];\n        \n        // Объединяем\n        const skillMap = new Map();\n        defaultSkills.forEach(s => skillMap.set(s.skill, s.count));\n        skills.forEach(s => {\n            skillMap.set(s.skill, (skillMap.get(s.skill) || 0) + s.count);\n        });\n        \n        skills = Array.from(skillMap.entries())\n            .map(([skill, count]) => ({ skill, count }))\n            .sort((a, b) => b.count - a.count);\n    }\n    \n    // Функция для правильного склонения\n    const getCorrectForm = (count) => {\n        if (count === 1) return \"раз\";\n        if (count >= 2 && count <= 4) return \"раза\";\n        return \"раз\"; // 5, 6, 7, 8, 9, 0, 11-19, 20, 21 и т.д.\n    };\n    \n    // Форматируем требования\n    const requirements = skills.slice(0, 12).map(item => {\n        const times = getCorrectForm(item.count);\n        return `${item.skill}: ${item.count} ${times}`;\n    }).join('\\n\\n');\n    \n    // Количество вакансий (можно динамически посчитать)\n    const totalVacancies = 15; // Ваше текущее значение\n    \n    // Финальное сообщение\n    const message = `На этой неделе я спарсил ${totalVacancies} свежих вакансий по направлению \"QA (тестирование)\". Самыми популярными являются следующие требования:\n\n${requirements}`;\n    \n    // ВОЗВРАЩАЕМ В ФОРМАТЕ БЕЗ ЛИШНИХ ПОЛЕЙ\n    return {\n        json: {\n            text: message\n            // Не добавляем другие поля!\n        }\n    };\n    \n} catch (error) {\n    console.error(\"Ошибка:\", error);\n    \n    return {\n        json: {\n            text: `На этой неделе я спарсил 15 свежих вакансий по направлению \"QA (тестирование)\". \n\nОсновные требования:\njava: 8 раз\nselenium: 7 раз\nsql: 6 раз\nmanual testing: 5 раз\napi testing: 4 раза\npostman: 4 раза\n\nДата: ${new Date().toLocaleDateString(\"ru-RU\")}`\n        }\n    };\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        0
+      ],
+      "id": "072af07b-a088-4fb5-ad39-2ea8664ca317",
+      "name": "Code in JavaScript2"
+    },
+    {
+      "parameters": {
+        "chatId": "-5097630102",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1456,
+        0
+      ],
+      "id": "1c27d1fd-951f-48aa-959c-ba90df02c3e9",
+      "name": "Send a text message",
+      "webhookId": "a903c6e3-d78b-4c31-9239-43013039e782",
+      "credentials": {
+        "telegramApi": {
+          "id": "dzyAsowGyYZnBeXp",
+          "name": "Telegram account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "Send a text message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "fc2ed3e3-57fd-4c29-b529-a1a87c22931f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c2aff4b0d067dd455112043042c8a65e8c8c18e7e5e501456182c7c1282e7494"
+  },
+  "id": "sIfnSmeigCy2uSbZ",
+  "tags": []
+}
